@@ -44,6 +44,48 @@
   let lastAccuracyM = null;
   let deviceHeadingDeg = null;
   let userMarker = null;
+  let browsePath = [];        // [] | [farm] | [farm,field] | [farm,field,block]
+
+  // -------------------------------------------------------------- library
+  // "Directories" are emulated as a Farm -> Field -> Block tree in
+  // localStorage, since a static site has no real filesystem to browse.
+  function loadLibrary() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("fam-library"));
+      if (raw && raw.farms) return raw;
+    } catch (e) { /* ignore corrupt storage */ }
+    return { farms: {} };
+  }
+
+  const library = loadLibrary();
+
+  function saveLibrary() {
+    localStorage.setItem("fam-library", JSON.stringify(library));
+  }
+
+  function ensureBlockNode(farm, field, block) {
+    if (!library.farms[farm]) library.farms[farm] = { fields: {} };
+    const f = library.farms[farm];
+    if (!f.fields[field]) f.fields[field] = { blocks: {} };
+    const fl = f.fields[field];
+    if (!fl.blocks[block]) fl.blocks[block] = { measurements: [] };
+    return fl.blocks[block];
+  }
+
+  function farmNames() {
+    return Object.keys(library.farms).sort();
+  }
+
+  function fieldNames(farm) {
+    const f = library.farms[farm];
+    return f ? Object.keys(f.fields).sort() : [];
+  }
+
+  function blockNames(farm, field) {
+    const f = library.farms[farm];
+    const fl = f && f.fields[field];
+    return fl ? Object.keys(fl.blocks).sort() : [];
+  }
 
   // ------------------------------------------------------------- settings
   function loadSettings() {
@@ -148,6 +190,7 @@
 
   const drawLayerGroup = L.layerGroup().addTo(map);
   const recordLayerGroup = L.layerGroup().addTo(map);
+  const viewLayerGroup = L.layerGroup().addTo(map);
 
   function vertexIcon() {
     return L.divIcon({ className: "vertex-dot", html: "", iconSize: [12, 12] });
@@ -274,6 +317,267 @@
 
   btnDraw.addEventListener("click", () => setMode("draw"));
   btnRecord.addEventListener("click", () => setMode("record"));
+
+  // ------------------------------------------------------- combo (type-or-pick)
+  function createCombo(container, placeholder, getOptions, onInput) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = placeholder;
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    const list = document.createElement("ul");
+    list.className = "combo-list hidden";
+    container.appendChild(input);
+    container.appendChild(list);
+
+    function render() {
+      const q = input.value.trim().toLowerCase();
+      const options = getOptions();
+      const filtered = q ? options.filter(o => o.toLowerCase().includes(q)) : options;
+      list.innerHTML = "";
+      if (!filtered.length) { list.classList.add("hidden"); return; }
+      filtered.slice(0, 8).forEach(opt => {
+        const li = document.createElement("li");
+        li.textContent = opt;
+        // mousedown (not click) fires before the input's blur hides the list
+        li.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          input.value = opt;
+          list.classList.add("hidden");
+          if (onInput) onInput(input.value);
+        });
+        list.appendChild(li);
+      });
+      list.classList.remove("hidden");
+    }
+
+    input.addEventListener("focus", render);
+    input.addEventListener("input", () => { render(); if (onInput) onInput(input.value); });
+    input.addEventListener("blur", () => setTimeout(() => list.classList.add("hidden"), 150));
+
+    return {
+      get value() { return input.value.trim(); },
+      set value(v) { input.value = v; },
+      refresh: render
+    };
+  }
+
+  // ------------------------------------------------------------- save modal
+  const saveModal = document.getElementById("save-modal");
+  const saveLabelInput = document.getElementById("save-label");
+  const saveSummaryEl = document.getElementById("save-summary");
+
+  let farmCombo, fieldCombo, blockCombo;
+  farmCombo = createCombo(document.getElementById("combo-farm"), "Select or type a farm name",
+    () => farmNames(),
+    () => { fieldCombo.refresh(); blockCombo.refresh(); });
+  fieldCombo = createCombo(document.getElementById("combo-field"), "Select or type a field name",
+    () => fieldNames(farmCombo.value),
+    () => { blockCombo.refresh(); });
+  blockCombo = createCombo(document.getElementById("combo-block"), "Select or type a block name",
+    () => blockNames(farmCombo.value, fieldCombo.value),
+    () => {});
+
+  function activePoints() {
+    return mode === "draw" ? drawPoints : recordPoints;
+  }
+
+  function openSaveModal() {
+    const points = activePoints();
+    if (points.length < 3) {
+      showToast("Add at least 3 points before saving.");
+      return;
+    }
+    farmCombo.value = settings.lastFarm || "";
+    fieldCombo.value = settings.lastField || "";
+    blockCombo.value = settings.lastBlock || "";
+    saveLabelInput.value = "";
+    saveSummaryEl.textContent =
+      `${formatArea(polygonAreaM2(points))} · ${formatLength(perimeterM(points, true))} · ${points.length} points`;
+    saveModal.classList.remove("hidden");
+  }
+
+  document.getElementById("btn-save-draw").addEventListener("click", openSaveModal);
+  document.getElementById("btn-save-record").addEventListener("click", openSaveModal);
+  document.getElementById("btn-save-cancel").addEventListener("click", () => saveModal.classList.add("hidden"));
+
+  document.getElementById("btn-save-confirm").addEventListener("click", () => {
+    const farm = farmCombo.value, field = fieldCombo.value, block = blockCombo.value;
+    if (!farm || !field || !block) {
+      showToast("Farm, field and block are all required.");
+      return;
+    }
+    const points = activePoints();
+    if (points.length < 3) {
+      showToast("Add at least 3 points before saving.");
+      return;
+    }
+    const node = ensureBlockNode(farm, field, block);
+    node.measurements.push({
+      id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      savedAt: new Date().toISOString(),
+      mode,
+      label: saveLabelInput.value.trim(),
+      points: points.map(p => ({ lat: p.lat, lng: p.lng })),
+      areaM2: polygonAreaM2(points),
+      perimeterM: perimeterM(points, true)
+    });
+    saveLibrary();
+    settings.lastFarm = farm;
+    settings.lastField = field;
+    settings.lastBlock = block;
+    saveSettings();
+    saveModal.classList.add("hidden");
+    showToast(`Saved to ${farm} / ${field} / ${block}`);
+  });
+
+  // ----------------------------------------------------------- browse modal
+  const browseModal = document.getElementById("browse-modal");
+  const browseListEl = document.getElementById("browse-list");
+  const browseBreadcrumbEl = document.getElementById("browse-breadcrumb");
+  const browseBackBtn = document.getElementById("btn-browse-back");
+  const viewInfoEl = document.getElementById("view-info");
+
+  function addBrowseRow(title, subtitle, onOpen, onDelete) {
+    const row = document.createElement("div");
+    row.className = "browse-row";
+
+    const main = document.createElement("div");
+    main.className = "browse-row-main";
+    const titleEl = document.createElement("div");
+    titleEl.className = "browse-row-title";
+    titleEl.textContent = title;
+    const subEl = document.createElement("div");
+    subEl.className = "browse-row-sub";
+    subEl.textContent = subtitle;
+    main.appendChild(titleEl);
+    main.appendChild(subEl);
+    main.addEventListener("click", onOpen);
+
+    const del = document.createElement("button");
+    del.className = "browse-row-delete";
+    del.textContent = "🗑";
+    del.addEventListener("click", (e) => { e.stopPropagation(); onDelete(); });
+
+    row.appendChild(main);
+    row.appendChild(del);
+    browseListEl.appendChild(row);
+  }
+
+  function renderBrowse() {
+    browseListEl.innerHTML = "";
+    browseBackBtn.style.visibility = browsePath.length ? "visible" : "hidden";
+
+    if (browsePath.length === 0) {
+      browseBreadcrumbEl.textContent = "Farms";
+      const names = farmNames();
+      if (!names.length) browseListEl.innerHTML = '<div class="browse-empty">No saved farms yet.</div>';
+      names.forEach(name => {
+        const count = fieldNames(name).length;
+        addBrowseRow(name, `${count} field${count === 1 ? "" : "s"}`,
+          () => { browsePath = [name]; renderBrowse(); },
+          () => {
+            if (!confirm(`Delete farm "${name}" and everything under it?`)) return;
+            delete library.farms[name];
+            saveLibrary();
+            renderBrowse();
+          });
+      });
+    } else if (browsePath.length === 1) {
+      const [farm] = browsePath;
+      browseBreadcrumbEl.textContent = `Farms / ${farm}`;
+      const names = fieldNames(farm);
+      if (!names.length) browseListEl.innerHTML = '<div class="browse-empty">No fields yet.</div>';
+      names.forEach(name => {
+        const count = blockNames(farm, name).length;
+        addBrowseRow(name, `${count} block${count === 1 ? "" : "s"}`,
+          () => { browsePath = [farm, name]; renderBrowse(); },
+          () => {
+            if (!confirm(`Delete field "${name}" and everything under it?`)) return;
+            delete library.farms[farm].fields[name];
+            saveLibrary();
+            renderBrowse();
+          });
+      });
+    } else if (browsePath.length === 2) {
+      const [farm, field] = browsePath;
+      browseBreadcrumbEl.textContent = `Farms / ${farm} / ${field}`;
+      const names = blockNames(farm, field);
+      if (!names.length) browseListEl.innerHTML = '<div class="browse-empty">No blocks yet.</div>';
+      names.forEach(name => {
+        const count = library.farms[farm].fields[field].blocks[name].measurements.length;
+        addBrowseRow(name, `${count} measurement${count === 1 ? "" : "s"}`,
+          () => { browsePath = [farm, field, name]; renderBrowse(); },
+          () => {
+            if (!confirm(`Delete block "${name}" and its measurements?`)) return;
+            delete library.farms[farm].fields[field].blocks[name];
+            saveLibrary();
+            renderBrowse();
+          });
+      });
+    } else {
+      const [farm, field, block] = browsePath;
+      browseBreadcrumbEl.textContent = `Farms / ${farm} / ${field} / ${block}`;
+      const measurements = library.farms[farm].fields[field].blocks[block].measurements
+        .slice()
+        .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+      if (!measurements.length) browseListEl.innerHTML = '<div class="browse-empty">No measurements yet.</div>';
+      measurements.forEach(m => {
+        const date = new Date(m.savedAt).toLocaleString();
+        addBrowseRow(m.label || date, `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`,
+          () => viewMeasurement(m, [farm, field, block]),
+          () => {
+            if (!confirm("Delete this measurement?")) return;
+            const arr = library.farms[farm].fields[field].blocks[block].measurements;
+            const idx = arr.findIndex(x => x.id === m.id);
+            if (idx >= 0) arr.splice(idx, 1);
+            saveLibrary();
+            renderBrowse();
+          });
+      });
+    }
+  }
+
+  function viewMeasurement(m, pathArr) {
+    browseModal.classList.add("hidden");
+    viewLayerGroup.clearLayers();
+    const poly = L.polygon(m.points.map(p => [p.lat, p.lng]), {
+      color: "#29b6f6", weight: 3, fillColor: "#29b6f6", fillOpacity: 0.2
+    }).addTo(viewLayerGroup);
+    map.fitBounds(poly.getBounds(), { padding: [40, 40] });
+
+    const date = new Date(m.savedAt).toLocaleString();
+    viewInfoEl.innerHTML = "";
+    const left = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "view-info-title";
+    title.textContent = pathArr.join(" / ") + (m.label ? " — " + m.label : "");
+    const sub = document.createElement("div");
+    sub.className = "view-info-sub";
+    sub.textContent = `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`;
+    left.appendChild(title);
+    left.appendChild(sub);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "view-info-close";
+    closeBtn.textContent = "✕";
+    closeBtn.addEventListener("click", () => {
+      viewLayerGroup.clearLayers();
+      viewInfoEl.classList.add("hidden");
+    });
+
+    viewInfoEl.appendChild(left);
+    viewInfoEl.appendChild(closeBtn);
+    viewInfoEl.classList.remove("hidden");
+  }
+
+  document.getElementById("btn-browse").addEventListener("click", () => {
+    browsePath = [];
+    renderBrowse();
+    browseModal.classList.remove("hidden");
+  });
+  document.getElementById("btn-browse-close").addEventListener("click", () => browseModal.classList.add("hidden"));
+  browseBackBtn.addEventListener("click", () => { browsePath.pop(); renderBrowse(); });
 
   // ------------------------------------------------------------- geolocation
   function qualityFromAccuracy(acc) {

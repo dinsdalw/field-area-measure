@@ -35,12 +35,14 @@
     <button id="btn-draw" class="tool-btn active" data-mode="draw">✏️ Draw</button>
     <button id="btn-record" class="tool-btn" data-mode="record">📍 Record</button>
     <button id="btn-locate" class="tool-btn icon-btn" title="Center on my location">🎯</button>
+    <button id="btn-browse" class="tool-btn icon-btn" title="Browse saved measurements">📂</button>
     <button id="btn-settings" class="tool-btn icon-btn" title="Settings">⚙️</button>
   </div>
 
   <!-- Draw-mode action bar -->
   <div id="draw-actions" class="action-bar">
     <button id="btn-undo">↶ Undo point</button>
+    <button id="btn-save-draw" class="save-btn">💾 Save</button>
     <button id="btn-clear">🗑 Clear</button>
   </div>
 
@@ -50,8 +52,12 @@
     <button id="btn-rec-pause" class="rec-btn hidden">⏸ Pause</button>
     <button id="btn-rec-resume" class="rec-btn hidden">▶ Resume</button>
     <button id="btn-rec-finish" class="rec-btn hidden">■ Finish</button>
+    <button id="btn-save-record" class="save-btn">💾 Save</button>
     <button id="btn-rec-clear">🗑 Clear</button>
   </div>
+
+  <!-- Viewed-measurement info chip -->
+  <div id="view-info" class="view-info hidden"></div>
 
   <!-- Results panel -->
   <div id="results" class="results-panel">
@@ -125,6 +131,44 @@
         <span class="dot dot-yellow"></span> Fair fix &nbsp;
         <span class="dot dot-red"></span> Poor / no fix
       </p>
+    </div>
+  </div>
+
+  <!-- Save-measurement modal -->
+  <div id="save-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Save Measurement</h2>
+
+      <label class="field-label">Farm</label>
+      <div class="combo" id="combo-farm"></div>
+
+      <label class="field-label">Field</label>
+      <div class="combo" id="combo-field"></div>
+
+      <label class="field-label">Block</label>
+      <div class="combo" id="combo-block"></div>
+
+      <label class="field-label" for="save-label">Label (optional)</label>
+      <input type="text" id="save-label" placeholder="e.g. North boundary" />
+
+      <div id="save-summary" class="save-summary"></div>
+
+      <div class="modal-buttons">
+        <button id="btn-save-cancel" class="secondary">Cancel</button>
+        <button id="btn-save-confirm">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browse / viewer modal -->
+  <div id="browse-modal" class="modal hidden">
+    <div class="modal-card browse-card">
+      <div class="browse-header">
+        <button id="btn-browse-back" class="icon-btn-flat">←</button>
+        <div id="browse-breadcrumb" class="breadcrumb">Farms</div>
+        <button id="btn-browse-close" class="icon-btn-flat">✕</button>
+      </div>
+      <div id="browse-list" class="browse-list"></div>
     </div>
   </div>
 
