@@ -49,6 +49,7 @@
   let editMode = false;
   let selectedIndex = null;
   let recordClosed = false;   // true once a recorded boundary has been Finished
+  let hasInitialCenter = false; // true once the map has centered on the user's first GPS fix
 
   // -------------------------------------------------------------- library
   // "Directories" are emulated as a Farm -> Field -> Block tree in
@@ -834,6 +835,10 @@
       }).addTo(map);
     } else {
       userMarker.setLatLng([latitude, longitude]);
+    }
+    if (!hasInitialCenter) {
+      hasInitialCenter = true;
+      map.setView([latitude, longitude], 18);
     }
     maybeRecordPoint(latitude, longitude);
   }
