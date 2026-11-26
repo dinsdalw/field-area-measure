@@ -32,7 +32,7 @@
 
   <!-- Top toolbar -->
   <div class="toolbar">
-    <button id="btn-draw" class="tool-btn" data-mode="draw">✏️ New Polygon</button>
+    <button id="btn-draw" class="tool-btn" data-mode="draw">➕ New Measurement</button>
     <button id="btn-record" class="tool-btn" data-mode="record">📍 Record</button>
     <button id="btn-locate" class="tool-btn icon-btn" title="Center on my location">🎯</button>
     <button id="btn-browse" class="tool-btn icon-btn" title="Browse saved measurements">📂</button>
@@ -65,12 +65,12 @@
 
   <!-- Results panel -->
   <div id="results" class="results-panel">
-    <div class="result-row">
+    <div id="area-row" class="result-row">
       <span class="result-label">Area</span>
       <span id="result-area" class="result-value">0</span>
     </div>
     <div class="result-row">
-      <span class="result-label">Perimeter</span>
+      <span id="result-perimeter-label" class="result-label">Perimeter</span>
       <span id="result-perimeter" class="result-value">0</span>
     </div>
     <div id="result-points" class="result-points">0 points</div>
@@ -135,6 +135,25 @@
         <span class="dot dot-yellow"></span> Fair fix &nbsp;
         <span class="dot dot-red"></span> Poor / no fix
       </p>
+    </div>
+  </div>
+
+  <!-- New-measurement type chooser -->
+  <div id="type-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>New Measurement</h2>
+      <p class="field-label" style="margin-top:0;">What do you want to measure?</p>
+      <div class="type-choice-row">
+        <button id="btn-type-area" class="type-choice-btn">
+          <span class="type-choice-icon">📐</span>Area<br><span class="type-choice-sub">closed shape</span>
+        </button>
+        <button id="btn-type-path" class="type-choice-btn">
+          <span class="type-choice-icon">📏</span>Path<br><span class="type-choice-sub">open line</span>
+        </button>
+      </div>
+      <div class="modal-buttons">
+        <button id="btn-type-cancel" class="secondary">Cancel</button>
+      </div>
     </div>
   </div>
 

@@ -36,6 +36,7 @@
   // ---------------------------------------------------------------- state
   const settings = loadSettings();
   let mode = null;            // null | "draw" | "record"
+  let drawShapeType = "area"; // "area" | "path" — chosen when starting a new draw shape
   let drawPoints = [];        // [{lat,lng}]
   let recordPoints = [];
   let recording = false;
@@ -268,10 +269,31 @@
     }
   }
 
+  // A draw-mode "area" is a closed polygon; a "path" stays an open line.
+  // Record mode stays closed/open per recordClosed (set when Finished).
+  function isClosedShape() {
+    if (mode === "draw") return drawShapeType === "area";
+    if (mode === "record") return recordClosed;
+    return false;
+  }
+
+  function isPathShape() {
+    return mode === "draw" && drawShapeType === "path";
+  }
+
+  // A path only needs 2 points to have a length; a polygon needs 3 for an area.
+  function activeMinPoints() {
+    return isPathShape() ? 2 : 3;
+  }
+
+  function shapeNoun() {
+    return isPathShape() ? "path" : "polygon";
+  }
+
   // Re-renders whichever point set is active, honoring editMode only for
   // that mode's layer group so a stale shape can't be dragged in the background.
   function renderAllShapes() {
-    redrawShape(drawLayerGroup, drawPoints, true, mode === "draw" && editMode);
+    redrawShape(drawLayerGroup, drawPoints, drawShapeType === "area", mode === "draw" && editMode);
     redrawShape(recordLayerGroup, recordPoints, recordClosed, mode === "record" && editMode);
   }
 
@@ -282,15 +304,16 @@
       btn.classList.toggle("active", editMode);
     });
     [document.getElementById("btn-delete-node-draw"), document.getElementById("btn-delete-node-record")].forEach(btn => {
-      btn.disabled = !(hasSelection && points.length > 3);
+      btn.disabled = !(hasSelection && points.length > activeMinPoints());
     });
   }
 
   function setEditMode(on) {
     if (on) {
       const points = activePoints();
-      if (points.length < 3) {
-        showToast("Add at least 3 points before editing nodes.");
+      const minPts = activeMinPoints();
+      if (points.length < minPts) {
+        showToast(`Add at least ${minPts} points before editing nodes.`);
         return;
       }
       if (mode === "record" && recording && !paused) {
@@ -307,8 +330,9 @@
   function deleteSelectedNode() {
     if (selectedIndex === null) return;
     const points = activePoints();
-    if (points.length <= 3) {
-      showToast("A polygon needs at least 3 points.");
+    const minPts = activeMinPoints();
+    if (points.length <= minPts) {
+      showToast(`A ${shapeNoun()} needs at least ${minPts} points.`);
       return;
     }
     points.splice(selectedIndex, 1);
@@ -320,7 +344,7 @@
 
   function updateResults() {
     const points = activePoints();
-    const enough = points.length >= 3;
+    const enough = points.length >= activeMinPoints();
     document.getElementById("btn-edit-draw").disabled = !enough;
     document.getElementById("btn-edit-record").disabled = !enough;
     document.getElementById("btn-save-draw").disabled = !enough;
@@ -332,8 +356,14 @@
       return;
     }
     resultsPanel.classList.remove("hidden");
-    const area = polygonAreaM2(points);
-    const perim = perimeterM(points, points.length >= 3);
+
+    const isPath = isPathShape();
+    document.getElementById("area-row").classList.toggle("hidden", isPath);
+    document.getElementById("result-perimeter-label").textContent = isPath ? "Length" : "Perimeter";
+
+    const closed = isClosedShape();
+    const area = closed ? polygonAreaM2(points) : 0;
+    const perim = perimeterM(points, closed);
     document.getElementById("result-area").textContent = formatArea(area);
     document.getElementById("result-perimeter").textContent = formatLength(perim);
     document.getElementById("result-points").textContent =
@@ -457,13 +487,38 @@
     mode = target;
     btnDraw.classList.toggle("active", mode === "draw");
     btnRecord.classList.toggle("active", mode === "record");
+    btnDraw.textContent = mode === "draw"
+      ? (drawShapeType === "path" ? "📏 Path" : "📐 Area")
+      : "➕ New Measurement";
     drawActions.classList.toggle("hidden", mode !== "draw");
     recordActions.classList.toggle("hidden", mode !== "record");
     updateResults();
   }
 
-  btnDraw.addEventListener("click", () => setMode("draw"));
+  const typeModal = document.getElementById("type-modal");
+
+  btnDraw.addEventListener("click", () => {
+    if (mode === "draw" || drawPoints.length > 0) {
+      setMode("draw"); // already drawing, or resuming an existing shape — keep its type
+      return;
+    }
+    typeModal.classList.remove("hidden");
+  });
   btnRecord.addEventListener("click", () => setMode("record"));
+
+  document.getElementById("btn-type-area").addEventListener("click", () => {
+    drawShapeType = "area";
+    typeModal.classList.add("hidden");
+    setMode("draw");
+  });
+  document.getElementById("btn-type-path").addEventListener("click", () => {
+    drawShapeType = "path";
+    typeModal.classList.add("hidden");
+    setMode("draw");
+  });
+  document.getElementById("btn-type-cancel").addEventListener("click", () => {
+    typeModal.classList.add("hidden");
+  });
 
   // ------------------------------------------------------- combo (type-or-pick)
   function createCombo(container, placeholder, getOptions, onInput) {
@@ -531,16 +586,20 @@
 
   function openSaveModal() {
     const points = activePoints();
-    if (points.length < 3) {
-      showToast("Add at least 3 points before saving.");
+    const minPts = activeMinPoints();
+    if (points.length < minPts) {
+      showToast(`Add at least ${minPts} points before saving.`);
       return;
     }
     farmCombo.value = settings.lastFarm || "";
     fieldCombo.value = settings.lastField || "";
     blockCombo.value = settings.lastBlock || "";
     saveLabelInput.value = "";
-    saveSummaryEl.textContent =
-      `${formatArea(polygonAreaM2(points))} · ${formatLength(perimeterM(points, true))} · ${points.length} points`;
+    const closed = isClosedShape();
+    const perim = perimeterM(points, closed);
+    saveSummaryEl.textContent = isPathShape()
+      ? `${formatLength(perim)} · ${points.length} points`
+      : `${formatArea(polygonAreaM2(points))} · ${formatLength(perim)} · ${points.length} points`;
     saveModal.classList.remove("hidden");
   }
 
@@ -555,19 +614,23 @@
       return;
     }
     const points = activePoints();
-    if (points.length < 3) {
-      showToast("Add at least 3 points before saving.");
+    const minPts = activeMinPoints();
+    if (points.length < minPts) {
+      showToast(`Add at least ${minPts} points before saving.`);
       return;
     }
+    const shapeType = mode === "draw" ? drawShapeType : "area";
+    const closed = isClosedShape();
     const node = ensureBlockNode(farm, field, block);
     node.measurements.push({
       id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       savedAt: new Date().toISOString(),
       mode,
+      shapeType,
       label: saveLabelInput.value.trim(),
       points: points.map(p => ({ lat: p.lat, lng: p.lng })),
-      areaM2: polygonAreaM2(points),
-      perimeterM: perimeterM(points, true)
+      areaM2: shapeType === "area" ? polygonAreaM2(points) : 0,
+      perimeterM: perimeterM(points, closed)
     });
     saveLibrary();
     settings.lastFarm = farm;
@@ -671,7 +734,10 @@
       if (!measurements.length) browseListEl.innerHTML = '<div class="browse-empty">No measurements yet.</div>';
       measurements.forEach(m => {
         const date = new Date(m.savedAt).toLocaleString();
-        addBrowseRow(m.label || date, `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`,
+        const metrics = m.shapeType === "path"
+          ? formatLength(m.perimeterM)
+          : `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)}`;
+        addBrowseRow(m.label || date, `${metrics} · ${date}`,
           () => viewMeasurement(m, [farm, field, block]),
           () => {
             if (!confirm("Delete this measurement?")) return;
@@ -688,10 +754,12 @@
   function viewMeasurement(m, pathArr) {
     browseModal.classList.add("hidden");
     viewLayerGroup.clearLayers();
-    const poly = L.polygon(m.points.map(p => [p.lat, p.lng]), {
-      color: "#29b6f6", weight: 3, fillColor: "#29b6f6", fillOpacity: 0.2
-    }).addTo(viewLayerGroup);
-    map.fitBounds(poly.getBounds(), { padding: [40, 40] });
+    const latlngs = m.points.map(p => [p.lat, p.lng]);
+    const shape = m.shapeType === "path"
+      ? L.polyline(latlngs, { color: "#29b6f6", weight: 3 })
+      : L.polygon(latlngs, { color: "#29b6f6", weight: 3, fillColor: "#29b6f6", fillOpacity: 0.2 });
+    shape.addTo(viewLayerGroup);
+    map.fitBounds(shape.getBounds(), { padding: [40, 40] });
 
     const date = new Date(m.savedAt).toLocaleString();
     viewInfoEl.innerHTML = "";
@@ -701,7 +769,9 @@
     title.textContent = pathArr.join(" / ") + (m.label ? " — " + m.label : "");
     const sub = document.createElement("div");
     sub.className = "view-info-sub";
-    sub.textContent = `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`;
+    sub.textContent = m.shapeType === "path"
+      ? `${formatLength(m.perimeterM)} · ${date}`
+      : `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`;
     left.appendChild(title);
     left.appendChild(sub);
 
