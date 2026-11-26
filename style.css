@@ -1,0 +1,298 @@
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #222;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+  z-index: 500;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0));
+}
+
+.tool-btn {
+  flex: 1 1 auto;
+  background: rgba(20,20,20,0.75);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 10px;
+  padding: 10px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+.tool-btn.icon-btn {
+  flex: 0 0 48px;
+  font-size: 18px;
+}
+
+.tool-btn.active {
+  background: #1b5e20;
+  border-color: #4caf50;
+}
+
+/* ---------- Action bars ---------- */
+.action-bar {
+  position: absolute;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  left: 0;
+  right: 0;
+  z-index: 500;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.action-bar.hidden { display: none; }
+
+.action-bar button {
+  background: rgba(20,20,20,0.8);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 24px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rec-btn.start { background: #c62828; }
+.rec-btn.hidden { display: none; }
+
+/* ---------- Results panel ---------- */
+.results-panel {
+  position: absolute;
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: 0;
+  right: 0;
+  z-index: 500;
+  background: rgba(15,15,15,0.85);
+  color: #fff;
+  padding: 10px 16px 14px;
+  backdrop-filter: blur(6px);
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+.result-label {
+  font-size: 13px;
+  color: #bbb;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.result-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.result-points {
+  text-align: right;
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ---------- Compass rose decal ---------- */
+.compass {
+  position: absolute;
+  top: calc(70px + env(safe-area-inset-top, 0px));
+  right: 12px;
+  z-index: 600;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(15,15,15,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#compass-svg {
+  width: 100%;
+  height: 100%;
+  transition: filter 0.3s ease;
+}
+
+.compass-ring {
+  fill: rgba(0,0,0,0.25);
+  stroke: #d32f2f;
+  stroke-width: 5;
+  transition: stroke 0.3s ease;
+}
+
+.compass[data-quality="yellow"] .compass-ring { stroke: #f9a825; }
+.compass[data-quality="green"] .compass-ring { stroke: #43a047; }
+
+#compass-rose {
+  transition: transform 0.25s linear;
+  transform-origin: 50px 50px;
+}
+
+.rose-n { fill: #e53935; }
+.rose-s, .rose-e, .rose-w { fill: #eceff1; }
+
+.compass-label {
+  font-size: 11px;
+  fill: #fff;
+  text-anchor: middle;
+  font-weight: 700;
+}
+
+.compass-hub {
+  fill: #fff;
+}
+
+.compass-accuracy {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.6);
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* ---------- Modal ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.hidden { display: none; }
+
+.modal-card {
+  background: #1e1e1e;
+  color: #fff;
+  width: min(420px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  border-radius: 16px;
+  padding: 20px 20px 10px;
+}
+
+.modal-card h2 {
+  margin: 0 0 12px;
+}
+
+.field-label {
+  display: block;
+  margin: 14px 0 4px;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.modal-card select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #2a2a2a;
+  color: #fff;
+  font-size: 15px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.modal-buttons {
+  margin-top: 22px;
+  text-align: right;
+}
+
+.modal-buttons button {
+  background: #1b5e20;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.legend {
+  margin-top: 18px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+.dot-green { background: #43a047; }
+.dot-yellow { background: #f9a825; }
+.dot-red { background: #d32f2f; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  z-index: 1100;
+  max-width: 85vw;
+  text-align: center;
+}
+.toast.hidden { display: none; }
+
+/* ---------- Leaflet tweaks ---------- */
+.leaflet-control-attribution {
+  font-size: 9px;
+}
+
+.vertex-dot {
+  width: 12px;
+  height: 12px;
+  background: #ffeb3b;
+  border: 2px solid #5d4037;
+  border-radius: 50%;
+}

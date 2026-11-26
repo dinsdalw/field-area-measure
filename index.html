@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Field Area Measure</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1b5e20" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <!-- Compass rose GPS-quality decal -->
+  <div id="compass" class="compass" title="GPS signal quality">
+    <svg viewBox="0 0 100 100" id="compass-svg">
+      <circle class="compass-ring" cx="50" cy="50" r="46"></circle>
+      <g id="compass-rose">
+        <polygon class="rose-n" points="50,6 58,50 50,42 42,50"></polygon>
+        <polygon class="rose-s" points="50,94 58,50 50,58 42,50"></polygon>
+        <polygon class="rose-e" points="94,50 50,58 58,50 50,42"></polygon>
+        <polygon class="rose-w" points="6,50 50,58 42,50 50,42"></polygon>
+        <text x="50" y="18" class="compass-label">N</text>
+      </g>
+      <circle class="compass-hub" cx="50" cy="50" r="4"></circle>
+    </svg>
+    <div id="compass-accuracy" class="compass-accuracy">--</div>
+  </div>
+
+  <!-- Top toolbar -->
+  <div class="toolbar">
+    <button id="btn-draw" class="tool-btn active" data-mode="draw">✏️ Draw</button>
+    <button id="btn-record" class="tool-btn" data-mode="record">📍 Record</button>
+    <button id="btn-locate" class="tool-btn icon-btn" title="Center on my location">🎯</button>
+    <button id="btn-settings" class="tool-btn icon-btn" title="Settings">⚙️</button>
+  </div>
+
+  <!-- Draw-mode action bar -->
+  <div id="draw-actions" class="action-bar">
+    <button id="btn-undo">↶ Undo point</button>
+    <button id="btn-clear">🗑 Clear</button>
+  </div>
+
+  <!-- Record-mode action bar -->
+  <div id="record-actions" class="action-bar hidden">
+    <button id="btn-rec-start" class="rec-btn start">● Start</button>
+    <button id="btn-rec-pause" class="rec-btn hidden">⏸ Pause</button>
+    <button id="btn-rec-resume" class="rec-btn hidden">▶ Resume</button>
+    <button id="btn-rec-finish" class="rec-btn hidden">■ Finish</button>
+    <button id="btn-rec-clear">🗑 Clear</button>
+  </div>
+
+  <!-- Results panel -->
+  <div id="results" class="results-panel">
+    <div class="result-row">
+      <span class="result-label">Area</span>
+      <span id="result-area" class="result-value">0</span>
+    </div>
+    <div class="result-row">
+      <span class="result-label">Perimeter</span>
+      <span id="result-perimeter" class="result-value">0</span>
+    </div>
+    <div id="result-points" class="result-points">0 points</div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Settings</h2>
+
+      <label class="field-label" for="unit-area">Area unit</label>
+      <select id="unit-area">
+        <optgroup label="Standard">
+          <option value="acres">Acres</option>
+          <option value="sqft">Square feet</option>
+        </optgroup>
+        <optgroup label="Metric">
+          <option value="hectares">Hectares</option>
+          <option value="sqm">Square meters</option>
+          <option value="sqkm">Square kilometers</option>
+        </optgroup>
+        <optgroup label="Other">
+          <option value="sqyd">Square yards</option>
+          <option value="sqmi">Square miles</option>
+          <option value="rood">Roods</option>
+          <option value="perch">Perches (sq. rods)</option>
+        </optgroup>
+      </select>
+
+      <label class="field-label" for="unit-length">Distance / perimeter unit</label>
+      <select id="unit-length">
+        <optgroup label="Standard">
+          <option value="feet">Feet</option>
+          <option value="miles">Miles</option>
+        </optgroup>
+        <optgroup label="Metric">
+          <option value="meters">Meters</option>
+          <option value="km">Kilometers</option>
+        </optgroup>
+        <optgroup label="Other">
+          <option value="yards">Yards</option>
+        </optgroup>
+      </select>
+
+      <label class="field-label" for="unit-basemap">Base map</label>
+      <select id="unit-basemap">
+        <option value="satellite">Satellite imagery</option>
+        <option value="street">Street map</option>
+      </select>
+
+      <div class="field-row">
+        <label for="toggle-compass-heading">Rotate compass with device heading</label>
+        <input type="checkbox" id="toggle-compass-heading" checked />
+      </div>
+
+      <div class="modal-buttons">
+        <button id="btn-settings-close">Done</button>
+      </div>
+
+      <p class="legend">
+        <span class="dot dot-green"></span> Good fix &nbsp;
+        <span class="dot dot-yellow"></span> Fair fix &nbsp;
+        <span class="dot dot-red"></span> Poor / no fix
+      </p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
