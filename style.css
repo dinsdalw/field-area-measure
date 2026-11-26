@@ -440,6 +440,13 @@ html, body {
   padding: 10px 16px;
 }
 
+.browse-row-export {
+  background: none;
+  border: none;
+  font-size: 16px;
+  padding: 10px 10px;
+}
+
 /* ---------- Viewed-measurement info chip ---------- */
 .view-info {
   position: absolute;

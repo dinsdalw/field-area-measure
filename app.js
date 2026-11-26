@@ -92,6 +92,108 @@
     return fl ? Object.keys(fl.blocks).sort() : [];
   }
 
+  // ------------------------------------------------------ KML / Google Earth export
+  function escapeXml(str) {
+    return String(str).replace(/[<>&'"]/g, (c) => ({
+      "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;"
+    }[c]));
+  }
+
+  function measurementKmlPlacemark(m) {
+    const isPath = m.shapeType === "path";
+    const coords = m.points.map(p => `${p.lng},${p.lat},0`);
+    if (!isPath) coords.push(coords[0]); // KML requires a closed ring
+    const geometry = isPath
+      ? `<LineString><tessellate>1</tessellate><coordinates>${coords.join(" ")}</coordinates></LineString>`
+      : `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords.join(" ")}</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+    const date = new Date(m.savedAt).toLocaleString();
+    const metrics = isPath
+      ? formatLength(m.perimeterM)
+      : `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)}`;
+    return `<Placemark><name>${escapeXml(m.label || date)}</name>` +
+      `<description>${escapeXml(`${metrics} · ${date}`)}</description>` +
+      `<Style><LineStyle><color>ff3bebff</color><width>3</width></LineStyle>` +
+      `<PolyStyle><color>663bebff</color></PolyStyle></Style>${geometry}</Placemark>`;
+  }
+
+  function blockKmlPlacemarks(farm, field, block) {
+    return library.farms[farm].fields[field].blocks[block].measurements
+      .map(measurementKmlPlacemark).join("");
+  }
+
+  function fieldKmlFolders(farm, field) {
+    return blockNames(farm, field).map(block =>
+      `<Folder><name>${escapeXml(block)}</name>${blockKmlPlacemarks(farm, field, block)}</Folder>`
+    ).join("");
+  }
+
+  function farmKmlFolders(farm) {
+    return fieldNames(farm).map(field =>
+      `<Folder><name>${escapeXml(field)}</name>${fieldKmlFolders(farm, field)}</Folder>`
+    ).join("");
+  }
+
+  function wrapKmlDocument(name, innerXml) {
+    return `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${escapeXml(name)}</name>${innerXml}</Document></kml>`;
+  }
+
+  function safeFilename(s) {
+    return String(s).replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "") || "export";
+  }
+
+  function downloadKml(filename, kmlString) {
+    const blob = new Blob([kmlString], { type: "application/vnd.google-earth.kml+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  function exportMeasurement(m) {
+    const name = m.label || new Date(m.savedAt).toLocaleString();
+    downloadKml(`${safeFilename(name)}.kml`, wrapKmlDocument(name, measurementKmlPlacemark(m)));
+    showToast("Exported .kml");
+  }
+
+  function exportBlock(farm, field, block) {
+    if (!library.farms[farm].fields[field].blocks[block].measurements.length) {
+      showToast("Nothing to export yet.");
+      return;
+    }
+    const name = `${farm} / ${field} / ${block}`;
+    downloadKml(`${safeFilename(farm + "_" + field + "_" + block)}.kml`,
+      wrapKmlDocument(name, blockKmlPlacemarks(farm, field, block)));
+    showToast("Exported .kml");
+  }
+
+  function exportField(farm, field) {
+    const hasAny = blockNames(farm, field).some(b => library.farms[farm].fields[field].blocks[b].measurements.length);
+    if (!hasAny) {
+      showToast("Nothing to export yet.");
+      return;
+    }
+    const name = `${farm} / ${field}`;
+    downloadKml(`${safeFilename(farm + "_" + field)}.kml`,
+      wrapKmlDocument(name, fieldKmlFolders(farm, field)));
+    showToast("Exported .kml");
+  }
+
+  function exportFarm(farm) {
+    const hasAny = fieldNames(farm).some(f =>
+      blockNames(farm, f).some(b => library.farms[farm].fields[f].blocks[b].measurements.length));
+    if (!hasAny) {
+      showToast("Nothing to export yet.");
+      return;
+    }
+    downloadKml(`${safeFilename(farm)}.kml`, wrapKmlDocument(farm, farmKmlFolders(farm)));
+    showToast("Exported .kml");
+  }
+
   // ------------------------------------------------------------- settings
   function loadSettings() {
     try {
@@ -649,7 +751,7 @@
   const browseBackBtn = document.getElementById("btn-browse-back");
   const viewInfoEl = document.getElementById("view-info");
 
-  function addBrowseRow(title, subtitle, onOpen, onDelete) {
+  function addBrowseRow(title, subtitle, onOpen, onDelete, onExport) {
     const row = document.createElement("div");
     row.className = "browse-row";
 
@@ -665,13 +767,23 @@
     main.appendChild(subEl);
     main.addEventListener("click", onOpen);
 
+    row.appendChild(main);
+
+    if (onExport) {
+      const exp = document.createElement("button");
+      exp.className = "browse-row-export";
+      exp.textContent = "⬇️";
+      exp.title = "Export as .kml";
+      exp.addEventListener("click", (e) => { e.stopPropagation(); onExport(); });
+      row.appendChild(exp);
+    }
+
     const del = document.createElement("button");
     del.className = "browse-row-delete";
     del.textContent = "🗑";
     del.addEventListener("click", (e) => { e.stopPropagation(); onDelete(); });
-
-    row.appendChild(main);
     row.appendChild(del);
+
     browseListEl.appendChild(row);
   }
 
@@ -692,7 +804,8 @@
             delete library.farms[name];
             saveLibrary();
             renderBrowse();
-          });
+          },
+          () => exportFarm(name));
       });
     } else if (browsePath.length === 1) {
       const [farm] = browsePath;
@@ -708,7 +821,8 @@
             delete library.farms[farm].fields[name];
             saveLibrary();
             renderBrowse();
-          });
+          },
+          () => exportField(farm, name));
       });
     } else if (browsePath.length === 2) {
       const [farm, field] = browsePath;
@@ -724,7 +838,8 @@
             delete library.farms[farm].fields[field].blocks[name];
             saveLibrary();
             renderBrowse();
-          });
+          },
+          () => exportBlock(farm, field, name));
       });
     } else {
       const [farm, field, block] = browsePath;
@@ -747,7 +862,8 @@
             if (idx >= 0) arr.splice(idx, 1);
             saveLibrary();
             renderBrowse();
-          });
+          },
+          () => exportMeasurement(m));
       });
     }
   }
