@@ -35,7 +35,7 @@
 
   // ---------------------------------------------------------------- state
   const settings = loadSettings();
-  let mode = "draw";          // "draw" | "record"
+  let mode = null;            // null | "draw" | "record"
   let drawPoints = [];        // [{lat,lng}]
   let recordPoints = [];
   let recording = false;
@@ -319,7 +319,19 @@
   }
 
   function updateResults() {
-    const points = mode === "draw" ? drawPoints : recordPoints;
+    const points = activePoints();
+    const enough = points.length >= 3;
+    document.getElementById("btn-edit-draw").disabled = !enough;
+    document.getElementById("btn-edit-record").disabled = !enough;
+    document.getElementById("btn-save-draw").disabled = !enough;
+    document.getElementById("btn-save-record").disabled = !enough;
+
+    const resultsPanel = document.getElementById("results");
+    if (mode !== "draw" && mode !== "record") {
+      resultsPanel.classList.add("hidden");
+      return;
+    }
+    resultsPanel.classList.remove("hidden");
     const area = polygonAreaM2(points);
     const perim = perimeterM(points, points.length >= 3);
     document.getElementById("result-area").textContent = formatArea(area);
@@ -433,8 +445,16 @@
   const recordActions = document.getElementById("record-actions");
 
   function setMode(next) {
-    if (mode !== next) setEditMode(false);
-    mode = next;
+    let target = next;
+    if (mode === next) {
+      if (next === "record" && recording && !paused) {
+        showToast("Pause or finish recording before switching modes.");
+        return;
+      }
+      target = null; // tapping the active mode again returns to neutral
+    }
+    if (mode !== target) setEditMode(false);
+    mode = target;
     btnDraw.classList.toggle("active", mode === "draw");
     btnRecord.classList.toggle("active", mode === "record");
     drawActions.classList.toggle("hidden", mode !== "draw");
@@ -880,7 +900,17 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("service-worker.js").catch(() => {});
+      navigator.serviceWorker.register("service-worker.js")
+        .then((reg) => reg.update())
+        .catch(() => {});
+    });
+    // Once a newer worker takes control, this tab's assets may still be the
+    // old ones it already fetched — reload once to pick up the new version.
+    let swRefreshed = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (swRefreshed) return;
+      swRefreshed = true;
+      window.location.reload();
     });
   }
 })();

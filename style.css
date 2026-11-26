@@ -97,6 +97,8 @@ html, body {
 .delete-node-btn { background: #b71c1c; }
 
 /* ---------- Results panel ---------- */
+.results-panel.hidden { display: none; }
+
 .results-panel {
   position: absolute;
   bottom: env(safe-area-inset-bottom, 0px);
@@ -478,6 +480,12 @@ html, body {
 /* ---------- Leaflet tweaks ---------- */
 .leaflet-control-attribution {
   font-size: 9px;
+}
+
+/* Our toolbar is a full-width band across the top; push the default
+   top-left zoom control down below it so it isn't hidden underneath. */
+.leaflet-top.leaflet-left {
+  top: calc(66px + env(safe-area-inset-top, 0px));
 }
 
 .vertex-dot {
