@@ -60,7 +60,9 @@ html, body {
   right: 0;
   z-index: 500;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  row-gap: 8px;
   justify-content: center;
   padding: 0 10px;
 }
@@ -81,6 +83,18 @@ html, body {
 .rec-btn.hidden { display: none; }
 
 .save-btn { background: #0d47a1; }
+
+.action-bar button:disabled {
+  opacity: 0.35;
+}
+
+.edit-btn { background: #6a1b9a; }
+.edit-btn.active {
+  background: #ab47bc;
+  box-shadow: 0 0 0 2px #fff inset;
+}
+
+.delete-node-btn { background: #b71c1c; }
 
 /* ---------- Results panel ---------- */
 .results-panel {
@@ -472,4 +486,28 @@ html, body {
   background: #ffeb3b;
   border: 2px solid #5d4037;
   border-radius: 50%;
+}
+
+.vertex-dot-editable {
+  width: 22px;
+  height: 22px;
+  background: #ffeb3b;
+  border: 3px solid #5d4037;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.vertex-dot-editable.vertex-dot-selected {
+  background: #ff5252;
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 82, 82, 0.5);
+}
+
+.midpoint-dot {
+  width: 14px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid #ffeb3b;
+  border-radius: 50%;
+  box-sizing: border-box;
 }

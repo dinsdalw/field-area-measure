@@ -45,6 +45,9 @@
   let deviceHeadingDeg = null;
   let userMarker = null;
   let browsePath = [];        // [] | [farm] | [farm,field] | [farm,field,block]
+  let editMode = false;
+  let selectedIndex = null;
+  let recordClosed = false;   // true once a recorded boundary has been Finished
 
   // -------------------------------------------------------------- library
   // "Directories" are emulated as a Farm -> Field -> Block tree in
@@ -192,23 +195,127 @@
   const recordLayerGroup = L.layerGroup().addTo(map);
   const viewLayerGroup = L.layerGroup().addTo(map);
 
-  function vertexIcon() {
-    return L.divIcon({ className: "vertex-dot", html: "", iconSize: [12, 12] });
+  function vertexIcon(editable, selected) {
+    const size = editable ? 22 : 12;
+    const cls = "vertex-dot" + (editable ? " vertex-dot-editable" : "") + (selected ? " vertex-dot-selected" : "");
+    return L.divIcon({ className: cls, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+  }
+
+  function midpointIcon() {
+    return L.divIcon({ className: "midpoint-dot", iconSize: [14, 14], iconAnchor: [7, 7] });
   }
 
   // --------------------------------------------------------- draw mode UI
-  function redrawShape(group, points, closedPolygon) {
+  // `editable` turns vertices into draggable/selectable nodes and adds
+  // tappable midpoint markers that split an edge into two segments.
+  function redrawShape(group, points, closedPolygon, editable) {
     group.clearLayers();
-    points.forEach(p => L.marker([p.lat, p.lng], { icon: vertexIcon() }).addTo(group));
+    let shapeLayer = null;
+
+    points.forEach((p, i) => {
+      const marker = L.marker([p.lat, p.lng], {
+        icon: vertexIcon(editable, editable && i === selectedIndex),
+        draggable: !!editable
+      });
+      if (editable) {
+        marker.on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          selectedIndex = selectedIndex === i ? null : i;
+          refreshEditButtons();
+          redrawShape(group, points, closedPolygon, true);
+        });
+        marker.on("drag", () => {
+          const ll = marker.getLatLng();
+          points[i].lat = ll.lat;
+          points[i].lng = ll.lng;
+          if (shapeLayer) shapeLayer.setLatLngs(points.map(pp => [pp.lat, pp.lng]));
+        });
+        marker.on("dragend", () => {
+          updateResults();
+          redrawShape(group, points, closedPolygon, true);
+        });
+      }
+      marker.addTo(group);
+    });
+
     if (points.length >= 2) {
       if (closedPolygon && points.length >= 3) {
-        L.polygon(points.map(p => [p.lat, p.lng]), {
+        shapeLayer = L.polygon(points.map(p => [p.lat, p.lng]), {
           color: "#ffeb3b", weight: 3, fillColor: "#ffeb3b", fillOpacity: 0.18
         }).addTo(group);
       } else {
-        L.polyline(points.map(p => [p.lat, p.lng]), { color: "#ffeb3b", weight: 3 }).addTo(group);
+        shapeLayer = L.polyline(points.map(p => [p.lat, p.lng]), { color: "#ffeb3b", weight: 3 }).addTo(group);
       }
     }
+
+    if (editable && points.length >= 2) {
+      const edgeCount = (closedPolygon && points.length >= 3) ? points.length : points.length - 1;
+      for (let i = 0; i < edgeCount; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        const midLat = (a.lat + b.lat) / 2;
+        const midLng = (a.lng + b.lng) / 2;
+        const midMarker = L.marker([midLat, midLng], { icon: midpointIcon() });
+        midMarker.on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          points.splice(i + 1, 0, { lat: midLat, lng: midLng });
+          selectedIndex = null;
+          refreshEditButtons();
+          redrawShape(group, points, closedPolygon, true);
+          updateResults();
+        });
+        midMarker.addTo(group);
+      }
+    }
+  }
+
+  // Re-renders whichever point set is active, honoring editMode only for
+  // that mode's layer group so a stale shape can't be dragged in the background.
+  function renderAllShapes() {
+    redrawShape(drawLayerGroup, drawPoints, true, mode === "draw" && editMode);
+    redrawShape(recordLayerGroup, recordPoints, recordClosed, mode === "record" && editMode);
+  }
+
+  function refreshEditButtons() {
+    const points = activePoints();
+    const hasSelection = editMode && selectedIndex !== null;
+    [document.getElementById("btn-edit-draw"), document.getElementById("btn-edit-record")].forEach(btn => {
+      btn.classList.toggle("active", editMode);
+    });
+    [document.getElementById("btn-delete-node-draw"), document.getElementById("btn-delete-node-record")].forEach(btn => {
+      btn.disabled = !(hasSelection && points.length > 3);
+    });
+  }
+
+  function setEditMode(on) {
+    if (on) {
+      const points = activePoints();
+      if (points.length < 3) {
+        showToast("Add at least 3 points before editing nodes.");
+        return;
+      }
+      if (mode === "record" && recording && !paused) {
+        showToast("Pause or finish recording before editing nodes.");
+        return;
+      }
+    }
+    editMode = on;
+    selectedIndex = null;
+    refreshEditButtons();
+    renderAllShapes();
+  }
+
+  function deleteSelectedNode() {
+    if (selectedIndex === null) return;
+    const points = activePoints();
+    if (points.length <= 3) {
+      showToast("A polygon needs at least 3 points.");
+      return;
+    }
+    points.splice(selectedIndex, 1);
+    selectedIndex = null;
+    refreshEditButtons();
+    renderAllShapes();
+    updateResults();
   }
 
   function updateResults() {
@@ -223,22 +330,38 @@
 
   map.on("click", (e) => {
     if (mode !== "draw") return;
+    if (editMode) {
+      if (selectedIndex !== null) {
+        selectedIndex = null;
+        refreshEditButtons();
+        renderAllShapes();
+      }
+      return;
+    }
     drawPoints.push({ lat: e.latlng.lat, lng: e.latlng.lng });
-    redrawShape(drawLayerGroup, drawPoints, true);
+    renderAllShapes();
     updateResults();
   });
 
   document.getElementById("btn-undo").addEventListener("click", () => {
     drawPoints.pop();
-    redrawShape(drawLayerGroup, drawPoints, true);
+    if (selectedIndex !== null && selectedIndex >= drawPoints.length) selectedIndex = null;
+    refreshEditButtons();
+    renderAllShapes();
     updateResults();
   });
 
   document.getElementById("btn-clear").addEventListener("click", () => {
     drawPoints = [];
-    redrawShape(drawLayerGroup, drawPoints, true);
+    setEditMode(false);
+    renderAllShapes();
     updateResults();
   });
+
+  document.getElementById("btn-edit-draw").addEventListener("click", () => setEditMode(!editMode));
+  document.getElementById("btn-edit-record").addEventListener("click", () => setEditMode(!editMode));
+  document.getElementById("btn-delete-node-draw").addEventListener("click", deleteSelectedNode);
+  document.getElementById("btn-delete-node-record").addEventListener("click", deleteSelectedNode);
 
   // ------------------------------------------------------- record mode UI
   const recStart = document.getElementById("btn-rec-start");
@@ -258,8 +381,9 @@
     recordPoints = [];
     recording = true;
     paused = false;
+    recordClosed = false;
+    setEditMode(false);
     setRecordButtons();
-    redrawShape(recordLayerGroup, recordPoints, false);
     updateResults();
     showToast("Recording started — walk the boundary.");
   });
@@ -278,8 +402,9 @@
   recFinish.addEventListener("click", () => {
     recording = false;
     paused = false;
+    recordClosed = true;
     setRecordButtons();
-    redrawShape(recordLayerGroup, recordPoints, true);
+    renderAllShapes();
     updateResults();
     showToast("Boundary finished.");
   });
@@ -288,15 +413,16 @@
     recording = false;
     paused = false;
     recordPoints = [];
+    recordClosed = false;
+    setEditMode(false);
     setRecordButtons();
-    redrawShape(recordLayerGroup, recordPoints, false);
     updateResults();
   });
 
   function maybeRecordPoint(lat, lng) {
     if (!(mode === "record" && recording && !paused)) return;
     recordPoints.push({ lat, lng });
-    redrawShape(recordLayerGroup, recordPoints, false);
+    renderAllShapes();
     updateResults();
   }
 
@@ -307,6 +433,7 @@
   const recordActions = document.getElementById("record-actions");
 
   function setMode(next) {
+    if (mode !== next) setEditMode(false);
     mode = next;
     btnDraw.classList.toggle("active", mode === "draw");
     btnRecord.classList.toggle("active", mode === "record");
@@ -748,6 +875,7 @@
   // ------------------------------------------------------------------ init
   setCompassQuality(null);
   setRecordButtons();
+  refreshEditButtons();
   updateResults();
 
   if ("serviceWorker" in navigator) {
