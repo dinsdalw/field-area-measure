@@ -50,6 +50,7 @@
   let selectedIndex = null;
   let recordClosed = false;   // true once a recorded boundary has been Finished
   let hasInitialCenter = false; // true once the map has centered on the user's first GPS fix
+  let editingRef = null;      // {farm,field,block,id,label} when drawPoints came from a saved measurement
 
   // -------------------------------------------------------------- library
   // "Directories" are emulated as a Farm -> Field -> Block tree in
@@ -297,7 +298,6 @@
 
   const drawLayerGroup = L.layerGroup().addTo(map);
   const recordLayerGroup = L.layerGroup().addTo(map);
-  const viewLayerGroup = L.layerGroup().addTo(map);
 
   function vertexIcon(editable, selected) {
     const size = editable ? 22 : 12;
@@ -498,6 +498,7 @@
 
   document.getElementById("btn-clear").addEventListener("click", () => {
     drawPoints = [];
+    editingRef = null;
     setEditMode(false);
     renderAllShapes();
     updateResults();
@@ -611,11 +612,13 @@
 
   document.getElementById("btn-type-area").addEventListener("click", () => {
     drawShapeType = "area";
+    editingRef = null;
     typeModal.classList.add("hidden");
     setMode("draw");
   });
   document.getElementById("btn-type-path").addEventListener("click", () => {
     drawShapeType = "path";
+    editingRef = null;
     typeModal.classList.add("hidden");
     setMode("draw");
   });
@@ -694,10 +697,17 @@
       showToast(`Add at least ${minPts} points before saving.`);
       return;
     }
-    farmCombo.value = settings.lastFarm || "";
-    fieldCombo.value = settings.lastField || "";
-    blockCombo.value = settings.lastBlock || "";
-    saveLabelInput.value = "";
+    if (editingRef) {
+      farmCombo.value = editingRef.farm;
+      fieldCombo.value = editingRef.field;
+      blockCombo.value = editingRef.block;
+      saveLabelInput.value = editingRef.label || "";
+    } else {
+      farmCombo.value = settings.lastFarm || "";
+      fieldCombo.value = settings.lastField || "";
+      blockCombo.value = settings.lastBlock || "";
+      saveLabelInput.value = "";
+    }
     const closed = isClosedShape();
     const perim = perimeterM(points, closed);
     saveSummaryEl.textContent = isPathShape()
@@ -724,24 +734,37 @@
     }
     const shapeType = mode === "draw" ? drawShapeType : "area";
     const closed = isClosedShape();
-    const node = ensureBlockNode(farm, field, block);
-    node.measurements.push({
-      id: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    const wasEditing = !!editingRef;
+    const label = saveLabelInput.value.trim();
+    const record = {
+      id: wasEditing ? editingRef.id : "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
       savedAt: new Date().toISOString(),
       mode,
       shapeType,
-      label: saveLabelInput.value.trim(),
+      label,
       points: points.map(p => ({ lat: p.lat, lng: p.lng })),
       areaM2: shapeType === "area" ? polygonAreaM2(points) : 0,
       perimeterM: perimeterM(points, closed)
-    });
+    };
+    if (wasEditing) {
+      const farmNode = library.farms[editingRef.farm];
+      const fieldNode = farmNode && farmNode.fields[editingRef.field];
+      const oldBlock = fieldNode && fieldNode.blocks[editingRef.block];
+      if (oldBlock) {
+        const idx = oldBlock.measurements.findIndex(x => x.id === editingRef.id);
+        if (idx >= 0) oldBlock.measurements.splice(idx, 1);
+      }
+    }
+    const node = ensureBlockNode(farm, field, block);
+    node.measurements.push(record);
+    if (wasEditing) editingRef = { farm, field, block, id: record.id, label };
     saveLibrary();
     settings.lastFarm = farm;
     settings.lastField = field;
     settings.lastBlock = block;
     saveSettings();
     saveModal.classList.add("hidden");
-    showToast(`Saved to ${farm} / ${field} / ${block}`);
+    showToast(wasEditing ? `Updated ${farm} / ${field} / ${block}` : `Saved to ${farm} / ${field} / ${block}`);
   });
 
   // ----------------------------------------------------------- browse modal
@@ -868,27 +891,37 @@
     }
   }
 
+  // Opening a saved measurement loads it into draw mode with node-editing
+  // already on, so the user can fix a boundary mistake without re-walking
+  // or re-drawing it from scratch. Saving while editingRef is set updates
+  // the original record in place instead of creating a duplicate.
   function viewMeasurement(m, pathArr) {
     browseModal.classList.add("hidden");
-    viewLayerGroup.clearLayers();
-    const latlngs = m.points.map(p => [p.lat, p.lng]);
-    const shape = m.shapeType === "path"
-      ? L.polyline(latlngs, { color: "#29b6f6", weight: 3 })
-      : L.polygon(latlngs, { color: "#29b6f6", weight: 3, fillColor: "#29b6f6", fillOpacity: 0.2 });
-    shape.addTo(viewLayerGroup);
-    map.fitBounds(shape.getBounds(), { padding: [40, 40] });
+
+    drawPoints = m.points.map(p => ({ lat: p.lat, lng: p.lng }));
+    drawShapeType = m.shapeType === "path" ? "path" : "area";
+    editingRef = { farm: pathArr[0], field: pathArr[1], block: pathArr[2], id: m.id, label: m.label || "" };
+
+    mode = "draw";
+    btnDraw.classList.add("active");
+    btnRecord.classList.remove("active");
+    btnDraw.textContent = drawShapeType === "path" ? "📏 Path" : "📐 Area";
+    drawActions.classList.remove("hidden");
+    recordActions.classList.add("hidden");
+
+    setEditMode(true);
+    updateResults();
+    map.fitBounds(L.latLngBounds(drawPoints.map(p => [p.lat, p.lng])), { padding: [40, 40] });
 
     const date = new Date(m.savedAt).toLocaleString();
     viewInfoEl.innerHTML = "";
     const left = document.createElement("div");
     const title = document.createElement("div");
     title.className = "view-info-title";
-    title.textContent = pathArr.join(" / ") + (m.label ? " — " + m.label : "");
+    title.textContent = "Editing: " + pathArr.join(" / ") + (m.label ? " — " + m.label : "");
     const sub = document.createElement("div");
     sub.className = "view-info-sub";
-    sub.textContent = m.shapeType === "path"
-      ? `${formatLength(m.perimeterM)} · ${date}`
-      : `${formatArea(m.areaM2)} · ${formatLength(m.perimeterM)} · ${date}`;
+    sub.textContent = date;
     left.appendChild(title);
     left.appendChild(sub);
 
@@ -896,7 +929,15 @@
     closeBtn.className = "view-info-close";
     closeBtn.textContent = "✕";
     closeBtn.addEventListener("click", () => {
-      viewLayerGroup.clearLayers();
+      drawPoints = [];
+      editingRef = null;
+      setEditMode(false);
+      mode = null;
+      btnDraw.classList.remove("active");
+      btnDraw.textContent = "➕ New Measurement";
+      drawActions.classList.add("hidden");
+      renderAllShapes();
+      updateResults();
       viewInfoEl.classList.add("hidden");
     });
 
